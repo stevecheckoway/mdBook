@@ -326,7 +326,13 @@ impl MDBook {
                 let mut cmd = Command::new("rustdoc");
                 cmd.current_dir(temp_dir.path())
                     .arg(&chapter_path)
-                    .arg("--test")
+                    .args(&[
+                        "--test",
+                        "-C",
+                        "embed-bitcode=no",
+                        "--error-format",
+                        "human",
+                    ])
                     .args(&library_args);
 
                 if let Some(edition) = self.config.rust.edition {
