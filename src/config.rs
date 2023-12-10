@@ -73,6 +73,8 @@ pub struct Config {
     pub build: BuildConfig,
     /// Information about Rust language support.
     pub rust: RustConfig,
+    /// Information about the test options.
+    pub test: TestConfig,
     rest: Value,
 }
 
@@ -291,6 +293,7 @@ impl Default for Config {
             book: BookConfig::default(),
             build: BuildConfig::default(),
             rust: RustConfig::default(),
+            test: TestConfig::default(),
             rest: Value::Table(Table::default()),
         }
     }
@@ -340,10 +343,16 @@ impl<'de> serde::Deserialize<'de> for Config {
             .transpose()?
             .unwrap_or_default();
 
+        let test: TestConfig = table
+            .remove("test")
+            .map(|test| test.try_into().map_err(D::Error::custom))
+            .transpose()?
+            .unwrap_or_default();
         Ok(Config {
             book,
             build,
             rust,
+            test,
             rest: Value::Table(table),
         })
     }
@@ -365,6 +374,11 @@ impl Serialize for Config {
         if self.rust != RustConfig::default() {
             let rust_config = Value::try_from(&self.rust).expect("should always be serializable");
             table.insert("rust", rust_config);
+        }
+
+        if self.test != TestConfig::default() {
+            let test_config = Value::try_from(&self.test).expect("should always be serializable");
+            table.insert("test", test_config);
         }
 
         table.serialize(s)
@@ -513,6 +527,14 @@ pub enum RustEdition {
     /// The 2015 edition of Rust
     #[serde(rename = "2015")]
     E2015,
+}
+
+/// Configuration for the tests.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct TestConfig {
+    /// Directory to cache the results
+    pub cache_dir: Option<PathBuf>,
 }
 
 /// Configuration for the HTML renderer.

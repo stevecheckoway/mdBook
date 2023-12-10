@@ -20,6 +20,7 @@ use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::string::ToString;
+use std::time::SystemTime;
 use tempfile::Builder as TempFileBuilder;
 use toml::Value;
 use topological_sort::TopologicalSort;
@@ -316,6 +317,42 @@ impl MDBook {
                     }
                 }
                 chapter_found = true;
+                // Check for cached test results by comparing the modified time of source file
+                // with the modified time of cache_path. 
+                let cache_path = self
+                    .config
+                    .test
+                    .cache_dir
+                    .as_ref()
+                    .map(|dir| dir.join(chapter_path));
+                if let Some(ref cache_path) = cache_path {
+                    let src_time = self
+                        .config
+                        .book
+                        .src
+                        .join(chapter_path)
+                        .metadata()
+                        .and_then(|md| md.modified())
+                        .unwrap_or_else(|_| SystemTime::now());
+                    let cache_time = cache_path
+                        .metadata()
+                        .and_then(|md| md.modified())
+                        .unwrap_or_else(|_| SystemTime::UNIX_EPOCH);
+                    if src_time <= cache_time {
+                        info!(
+                            "Skipping unchanged chapter '{}': {:?}",
+                            ch.name, chapter_path
+                        );
+                        continue;
+                    }
+                    // File::set_modified() is nightly-only so delete the file at cache_path.
+                    // If the test is successful, it will be recreated.
+                    if let Err(err) = std::fs::remove_file(cache_path) {
+                        if err.kind() != std::io::ErrorKind::NotFound {
+                            debug!("Error removing '{}': {err}", cache_path.display());
+                        }
+                    }
+                }
                 info!("Testing chapter '{}': {:?}", ch.name, chapter_path);
 
                 // write preprocessed file to tempdir
@@ -364,6 +401,10 @@ impl MDBook {
                         String::from_utf8_lossy(&output.stdout),
                         String::from_utf8_lossy(&output.stderr)
                     );
+                } else if let Some(cache_path) = cache_path {
+                    if let Err(err) = utils::fs::create_file(&cache_path) {
+                        error!("Failed to cache test results to '{}': {err}", cache_path.display());
+                    }
                 }
             }
         }
